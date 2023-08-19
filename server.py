@@ -42,7 +42,6 @@ while True:
             name = user['data'].decode('utf-8')
             mm_h = f"{45+len(name):<10}"
             mm = mm_h+f"[b]{name}, Bem vindo ao Superchat![/b]"
-            client_socket.send(user['header'] + user['data'] + bytes(mm,"utf-8"))
             print('Nova conexão recebida de {}:{}, usuário: {}'.format(
                 *client_address, user['data'].decode('utf-8')))
 

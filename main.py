@@ -24,9 +24,67 @@ from kivymd.uix.navigationdrawer import MDNavigationDrawer
 from kivymd.uix.navigationdrawer import MDNavigationLayout as NavigationLayout
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.toolbar import MDTopAppBar as MDToolbar
+from cryptography.fernet import Fernet
+import base64
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.fernet import Fernet
+import socket
+from threading import Thread
+
+HEADER_LENGTH = 10
+client_socket = None
+
+def connect(ip, my_username, error_callback):
+
+    global client_socket
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    try:
+        client_socket.connect((ip, 1234))
+
+    except Exception as e:
+        error_callback('Connection error: {}'.format(str(e)))
+        return False
+
+    username = my_username.encode('utf-8')
+    username_header = f"{len(username):<{HEADER_LENGTH}}".encode('utf-8')
+    client_socket.send(username_header + username)
+    return True
 
 
-import client
+def send(message):
+    message_header = f"{len(message):<{HEADER_LENGTH}}".encode('utf-8')
+    client_socket.send(message_header + message)
+
+
+def start_listening(incoming_message_callback, error_callback):
+    Thread(target=listen, args=(incoming_message_callback,
+                                error_callback), daemon=True).start()
+
+
+def listen(incoming_message_callback, error_callback):
+    while True:
+
+        try:
+            while True:
+                username_header = client_socket.recv(HEADER_LENGTH)
+                if not len(username_header):
+                    error_callback('Connection closed by the server')
+                username_length = int(username_header.decode('utf-8').strip())
+                username = client_socket.recv(username_length).decode('utf-8')
+                message_header = client_socket.recv(HEADER_LENGTH)
+                message_length = int(message_header.decode('utf-8').strip())
+                message = client_socket.recv(message_length).decode('utf-8')
+                message = fern.decrypt(message)
+                msgfinal = message.decode('utf-8')
+                incoming_message_callback(username, msgfinal)
+
+        except Exception as e:
+            incoming_message_callback("Server", "Erro de Encriptação: Ou você ou alguém está usando uma senha errada")
+
+fern = ""
 
 Window.softinput_mode = 'pan'
 class ScrollableLabel(ScrollView):
@@ -71,7 +129,6 @@ class ConnectPage(GridLayout):
                 prev_username = d[2]
         else:
             prev_ip = ""
-            prev_port = "1234"
             prev_username = ""
         self.add_widget(MDLabel())
         self.add_widget(MDLabel())
@@ -83,11 +140,11 @@ class ConnectPage(GridLayout):
         self.float.add_widget(self.ip)
         self.add_widget(self.float)
 
-        self.add_widget(MDLabel(text="                                     Porta : ", halign="left",
+        self.add_widget(MDLabel(text="                                     Senha : ", halign="left",
                                 theme_text_color="Primary", pos_hint={'x': 0.2,'y': 0.0}))
         self.float = FloatLayout()
         self.port = MDTextField(
-            text=prev_port, multiline=False, pos_hint={'x': -0.4, 'y': 0.2}, mode="rectangle")
+            text="", multiline=False, pos_hint={'x': -0.4, 'y': 0.2}, mode="rectangle")
         self.float.add_widget(self.port)
         self.add_widget(self.float)
 
@@ -112,24 +169,34 @@ class ConnectPage(GridLayout):
 
     def connect_button(self, instance):
         ip = self.ip.text
-        port = self.port.text
         username = self.username.text
+        senha_prev =  bytes(self.port.text, 'utf-8')
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=bytes('test', 'utf-8'),
+            iterations=1,
+            backend=default_backend()
+        )
+
+        senha = base64.urlsafe_b64encode(kdf.derive(senha_prev))
+        senha = senha.decode('utf-8')
+        global fern
+        fern = Fernet(senha)
 
         with open("prev_details.txt", "w") as f:
-            f.write(f"{ip},{port},{username}")
+            f.write(f"{ip},{username},{username}")
 
-        info = f"Tentando conectar em {ip}:{port} como {username}"
+        info = f"Tentando conectar em {ip}:1234 como {username}"
         chat_app.info_page.update_info(info)
         chat_app.screen_manager.current = "Info"
         Clock.schedule_once(self.connect, 0.5)
 
     def connect(self, _):
         ip = self.ip.text
-        port = self.port.text
-        port = int(port)
         username = self.username.text
 
-        if not client.connect(ip, port, username, show_error):
+        if not connect(ip, username, show_error):
             return
         chat_app.create_chat_page()
         chat_app.screen_manager.current = "Chat"
@@ -173,7 +240,7 @@ class ChatPage(GridLayout):
         Window.bind(on_key_down=self.on_key_down)
 
         Clock.schedule_once(self.focus_text_input, 3)
-        client.start_listening(self.incoming_message, show_error)
+        start_listening(self.incoming_message, show_error)
         self.bind(size=self.adjust_fields)
 
     def adjust_fields(self, *_):
@@ -194,12 +261,14 @@ class ChatPage(GridLayout):
             self.send_message(None)
 
     def send_message(self, _):
-        msg = self.new_msg.text
+        msg = fern.encrypt(bytes(self.new_msg.text, 'utf-8'))
+        msglocal = self.new_msg.text
+        print(msg)
         self.new_msg.text = ''
         if msg:
             self.history.update_chat_history(
-                f"[color=dd2020]{chat_app.connect_page.username.text}[/color] [color=20dddd]>:[/color] {msg}")
-            client.send(msg)
+                f"[color=dd2020]{chat_app.connect_page.username.text}[/color] [color=20dddd]>:[/color] {msglocal}")
+            send(msg)
 
     def focus_text_input(self, _):
         self.new_msg.focus = True
