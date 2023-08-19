@@ -1,7 +1,8 @@
 import os
 import sys
-
 import kivy
+import socket
+import base64
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.config import Config
@@ -16,25 +17,23 @@ from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.font_definitions import theme_font_styles
 from kivymd.theming import ThemeManager
-from kivymd.uix.button import MDFlatButton, MDFloatingActionButton, MDRectangleFlatButton, MDRaisedButton
-from kivymd.uix.card import MDSeparator
+from kivymd.uix.button import MDFloatingActionButton, MDRaisedButton
 from kivymd.uix.label import MDLabel
-from kivymd.uix.list import MDList, OneLineAvatarIconListItem, IconLeftWidget
 from kivymd.uix.navigationdrawer import MDNavigationDrawer
 from kivymd.uix.navigationdrawer import MDNavigationLayout as NavigationLayout
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.toolbar import MDTopAppBar as MDToolbar
 from cryptography.fernet import Fernet
-import base64
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.fernet import Fernet
-import socket
 from threading import Thread
 
 HEADER_LENGTH = 10
 client_socket = None
+fern = ""
+Window.softinput_mode = 'pan'
 
 def connect(ip, my_username, error_callback):
 
@@ -53,16 +52,13 @@ def connect(ip, my_username, error_callback):
     client_socket.send(username_header + username)
     return True
 
-
 def send(message):
     message_header = f"{len(message):<{HEADER_LENGTH}}".encode('utf-8')
     client_socket.send(message_header + message)
 
-
 def start_listening(incoming_message_callback, error_callback):
     Thread(target=listen, args=(incoming_message_callback,
                                 error_callback), daemon=True).start()
-
 
 def listen(incoming_message_callback, error_callback):
     while True:
@@ -82,11 +78,8 @@ def listen(incoming_message_callback, error_callback):
                 incoming_message_callback(username, msgfinal)
 
         except Exception as e:
-            incoming_message_callback("Server", "Erro de Encriptação: Ou você ou alguém está usando uma senha errada")
+            pass
 
-fern = ""
-
-Window.softinput_mode = 'pan'
 class ScrollableLabel(ScrollView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -114,7 +107,6 @@ class ScrollableLabel(ScrollView):
         self.chat_history.height = self.chat_history.texture_size[1]
         self.chat_history.text_size = (self.chat_history.width * 0.98, None)
 
-
 class ConnectPage(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -130,7 +122,7 @@ class ConnectPage(GridLayout):
         else:
             prev_ip = ""
             prev_username = ""
-        self.add_widget(MDLabel())
+        self.add_widget(MDLabel(text="Super Chat V2", halign="center",))
         self.add_widget(MDLabel())
         self.add_widget(MDLabel(text="                                     IP : ", halign="left",
                                 theme_text_color="Primary", pos_hint={'x': 0.2,'y': 0.0}))
@@ -144,7 +136,7 @@ class ConnectPage(GridLayout):
                                 theme_text_color="Primary", pos_hint={'x': 0.2,'y': 0.0}))
         self.float = FloatLayout()
         self.port = MDTextField(
-            text="", multiline=False, pos_hint={'x': -0.4, 'y': 0.2}, mode="rectangle")
+            text="", multiline=False, pos_hint={'x': -0.4, 'y': 0.2}, mode="rectangle", password=True)
         self.float.add_widget(self.port)
         self.add_widget(self.float)
 
@@ -178,12 +170,10 @@ class ConnectPage(GridLayout):
             iterations=1,
             backend=default_backend()
         )
-
         senha = base64.urlsafe_b64encode(kdf.derive(senha_prev))
         senha = senha.decode('utf-8')
         global fern
         fern = Fernet(senha)
-
         with open("prev_details.txt", "w") as f:
             f.write(f"{ip},{username},{username}")
 
@@ -195,18 +185,15 @@ class ConnectPage(GridLayout):
     def connect(self, _):
         ip = self.ip.text
         username = self.username.text
-
         if not connect(ip, username, show_error):
             return
         chat_app.create_chat_page()
         chat_app.screen_manager.current = "Chat"
 
-
 class InfoPage(GridLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.cols = 1
-
         self.message = MDLabel(halign="center", valign="middle",
                                font_style=theme_font_styles[7], theme_text_color="Primary")
         self.message.bind(width=self.update_text_width)
